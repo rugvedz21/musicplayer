@@ -241,7 +241,6 @@
             color: #1db954;
         }
 
-        /* Scrollbar styling */
         .playlist-container::-webkit-scrollbar {
             width: 6px;
         }
@@ -318,7 +317,6 @@
                 <button id="shuffle-playlist">Shuffle All</button>
             </div>
             <div class="playlist-container" id="playlist">
-                <!-- Playlist items will be added here dynamically -->
             </div>
             <audio id="audio" style="display: none;"></audio>
         </div>
@@ -351,14 +349,11 @@
         let isRepeatOn = false;
         let playlistTracks = [];
 
-        // Queue for upcoming songs
-        let queue = [];
+        document.addEventListener('DOMContentLoaded', function () {
+            loadPlaylistFromStorage();
+        });
 
-        // Stack for recently played songs
-        let recentlyPlayedStack = [];
-
-        // File input handling
-        fileInput.addEventListener('change', function(e) {
+        fileInput.addEventListener('change', function (e) {
             const files = Array.from(e.target.files);
             addTracksToPlaylist(files);
         });
@@ -371,8 +366,8 @@
                     url: URL.createObjectURL(file)
                 };
                 playlistTracks.push(track);
-                queue.push(track); // Add track to the queue
             });
+            savePlaylistToStorage();
             updatePlaylistUI();
             if (playlistTracks.length === files.length) {
                 loadTrack(0);
@@ -404,11 +399,10 @@
                 songTitle.textContent = track.name;
                 songArtist.textContent = 'Local File';
                 updatePlaylistUI();
-                queue = playlistTracks.slice(index + 1); // Set the remaining tracks as the queue
             }
         }
 
-        document.querySelector('.play').addEventListener('click', function() {
+        document.querySelector('.play').addEventListener('click', function () {
             if (audio.src) {
                 if (isPlaying) {
                     pauseAudio();
@@ -430,61 +424,110 @@
             isPlaying = false;
         }
 
-        // Handle next and previous actions
         nextBtn.addEventListener('click', playNext);
         prevBtn.addEventListener('click', playPrev);
 
         function playNext() {
-            if (queue.length > 0) {
-                const nextTrack = queue.shift(); // Dequeue the next song
-                recentlyPlayedStack.push(playlistTracks[currentTrackIndex]); // Push the current song to the stack
-                loadTrack(playlistTracks.indexOf(nextTrack));
-                playAudio();
+            if (isShuffleOn) {
+                loadTrack(Math.floor(Math.random() * playlistTracks.length));
             } else {
                 loadTrack((currentTrackIndex + 1) % playlistTracks.length);
-                playAudio();
             }
+            playAudio();
         }
 
         function playPrev() {
-            if (recentlyPlayedStack.length > 0) {
-                const prevTrack = recentlyPlayedStack.pop(); // Pop the last played song from the stack
-                loadTrack(playlistTracks.indexOf(prevTrack));
-                playAudio();
-            } else if (currentTrackIndex > 0) {
+            if (currentTrackIndex > 0) {
                 loadTrack(currentTrackIndex - 1);
                 playAudio();
             }
         }
 
-        // Shuffle toggle logic
-        shuffleBtn.addEventListener('click', function() {
+        shuffleBtn.addEventListener('click', function () {
             isShuffleOn = !isShuffleOn;
             shuffleBtn.style.color = isShuffleOn ? '#1db954' : '#fff';
-            if (isShuffleOn) {
-                shuffleQueue();
-            }
         });
 
-        function shuffleQueue() {
-            // Shuffle the remaining queue tracks
-            for (let i = queue.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [queue[i], queue[j]] = [queue[j], queue[i]];
-            }
-        }
-
-        // Repeat toggle logic
-        repeatBtn.addEventListener('click', function() {
+        repeatBtn.addEventListener('click', function () {
             isRepeatOn = !isRepeatOn;
             repeatBtn.style.color = isRepeatOn ? '#1db954' : '#fff';
         });
 
-        // Clear playlist functionality
-        clearPlaylistBtn.addEventListener('click', function() {
+        let isMuted = false;
+        volumeIcon.addEventListener('click', function () {
+            if (isMuted) {
+                audio.volume = 1;
+                volumeProgress.style.width = '100%';
+                volumeIcon.classList.replace('fa-volume-xmark', 'fa-volume-high');
+            } else {
+                audio.volume = 0;
+                volumeProgress.style.width = '0%';
+                volumeIcon.classList.replace('fa-volume-high', 'fa-volume-xmark');
+            }
+            isMuted = !isMuted;
+        });
+
+        volumeBar.addEventListener('click', function (e) {
+            const rect = volumeBar.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const width = rect.width;
+            const volume = x / width;
+            audio.volume = volume;
+            volumeProgress.style.width = `${volume * 100}%`;
+            updateVolumeIcon(volume);
+        });
+
+        function updateVolumeIcon(volume) {
+            if (volume === 0) {
+                volumeIcon.classList.replace('fa-volume-high', 'fa-volume-xmark');
+            } else if (volume <= 0.5) {
+                volumeIcon.classList.replace('fa-volume-high', 'fa-volume-low');
+                volumeIcon.classList.replace('fa-volume-xmark', 'fa-volume-low');
+            } else {
+                volumeIcon.classList.replace('fa-volume-low', 'fa-volume-high');
+                volumeIcon.classList.replace('fa-volume-xmark', 'fa-volume-high');
+            }
+            isMuted = volume === 0;
+        }
+
+        audio.addEventListener('timeupdate', updateProgressBar);
+        progress.addEventListener('click', seek);
+
+        function updateProgressBar() {
+            const progressPercentage = (audio.currentTime / audio.duration) * 100;
+            progressBar.style.width = `${progressPercentage}%`;
+
+            const currentTime = formatTime(audio.currentTime);
+            const duration = formatTime(audio.duration);
+
+            currentTimeSpan.textContent = currentTime;
+            durationSpan.textContent = duration ? duration : '0:00';
+        }
+
+        function seek(event) {
+            const rect = progress.getBoundingClientRect();
+            const offsetX = event.clientX - rect.left;
+            const width = rect.width;
+            const seekTime = (offsetX / width) * audio.duration;
+            audio.currentTime = seekTime;
+        }
+
+        function formatTime(seconds) {
+            const minutes = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${minutes}:${secs < 10 ? '0' + secs : secs}`;
+        }
+
+        audio.addEventListener('ended', function () {
+            if (isRepeatOn) {
+                playAudio();
+            } else {
+                playNext();
+            }
+        });
+
+        clearPlaylistBtn.addEventListener('click', function () {
             playlistTracks = [];
-            queue = [];
-            recentlyPlayedStack = [];
             updatePlaylistUI();
             audio.src = '';
             songTitle.textContent = 'No file selected';
@@ -493,55 +536,34 @@
             currentTimeSpan.textContent = '0:00';
             durationSpan.textContent = '0:00';
             pauseAudio();
+            savePlaylistToStorage();
         });
 
-        // Shuffle playlist functionality
-        shufflePlaylistBtn.addEventListener('click', function() {
+        shufflePlaylistBtn.addEventListener('click', function () {
             playlistTracks = playlistTracks.sort(() => Math.random() - 0.5);
-            queue = playlistTracks.slice(currentTrackIndex + 1); // Reassign shuffled tracks to the queue
             updatePlaylistUI();
+            savePlaylistToStorage();
         });
 
-        // Audio playback handling when a track ends
-        audio.addEventListener('ended', function() {
-            if (isRepeatOn) {
-                playAudio();
-            } else {
-                playNext();
+        function savePlaylistToStorage() {
+            const tracksToStore = playlistTracks.map(track => ({
+                name: track.name,
+                url: track.url
+            }));
+            localStorage.setItem('playlist', JSON.stringify(tracksToStore));
+        }
+
+        function loadPlaylistFromStorage() {
+            const savedPlaylist = localStorage.getItem('playlist');
+            if (savedPlaylist) {
+                playlistTracks = JSON.parse(savedPlaylist).map(track => ({
+                    ...track,
+                    file: null
+                }));
+                updatePlaylistUI();
+                loadTrack(0);
             }
-        });
-
-        // Event listener for when the metadata of the audio is loaded (duration is available)
-        audio.addEventListener('loadedmetadata', function() {
-            durationSpan.textContent = formatTime(audio.duration);
-        });
-
-        // Event listener for time updates during playback
-        audio.addEventListener('timeupdate', function() {
-            updateProgressBar();
-            currentTimeSpan.textContent = formatTime(audio.currentTime);
-        });
-
-        // Format time (e.g., 90 seconds -> "1:30")
-        function formatTime(seconds) {
-            const minutes = Math.floor(seconds / 60);
-            const remainingSeconds = Math.floor(seconds % 60);
-            return `${minutes}:${remainingSeconds < 10 ? '0' : ''}${remainingSeconds}`;
         }
-
-        // Update progress bar width
-        function updateProgressBar() {
-            const progress = (audio.currentTime / audio.duration) * 100;
-            progressBar.style.width = `${progress}%`;
-        }
-
-        // Handle clicking on the progress bar to seek the audio
-        progressBar.parentElement.addEventListener('click', function(e) {
-            const progressWidth = progressBar.parentElement.offsetWidth;
-            const clickX = e.offsetX;
-            const seekTime = (clickX / progressWidth) * audio.duration;
-            audio.currentTime = seekTime;
-        });
     </script>
 </body>
 </html>
